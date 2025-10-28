@@ -9,8 +9,11 @@ tau = 0.01
 
 # Marker offset assumptions (mirror door, marker near panel center).
 # All vectors are expressed in door coordinates while the door is closed.
-MARKER_TO_DOOR_BASE_OFFSET = np.array([0.0, 0.9125, 1.045])
-BASE_CAMERA_TO_BASE = np.array([])
+MARKER_TO_DOOR_BASE_OFFSET = np.array([0.0, -0.9125, 1.045])
+BASE_TO_BASECAMERA = np.array([[ 0.9989,  0.0464, -0.0112,  0.1149],
+                                [ 0.003 ,  0.1737 , 0.9848, -0.0891],
+                                [ 0.0477, -0.9837,  0.1734,  0.7865],
+                                [ 0.  ,    0.   ,   0.    ,  1.    ]])
 
 # MARKER_TO_HANDLE_OFFSET = np.array([0.0, 0.085, 17.25])
 
@@ -52,7 +55,7 @@ class ManpulaitonHelper2(ry.KOMO_ManipulationHelper):
 
         # orientation: keep the gripper orthogonal to the handle plane
         self.komo.addObjective([time - .2, time], ry.FS.scalarProductXZ, [gripper, obj], ry.OT.eq, [1e0])
-        self.komo.addObjective([time - .2, time], ry.FS.scalarProductXZ, [gripper, joint], ry.OT.ineq, scale=[1e0], target=5.)
+        self.komo.addObjective([time - .2, time], ry.FS.scalarProductXZ, [gripper, joint], ry.OT.ineq, scale=[1e0], target=[0.7])
 
         # no collision with palm
         self.komo.addObjective([time - .3, time], ry.FS.distance, [palm, obj], ry.OT.ineq, [1e1], [-.001])
@@ -64,11 +67,9 @@ def acquire_marker_pose():
     return np.asarray(t, dtype=float).reshape(3,), np.asarray(r, dtype=float).reshape(3,)
 
 
-def place_door_scene(C: ry.Config, door_translation: np.ndarray) -> ry.Frame:
-    """Load the door scenario and place the base frame at the desired location."""
+def place_door_scene(C: ry.Config, door_pose: np.ndarray) -> ry.Frame:
+    """Load the door scenario and set the base frame pose explicitly."""
     door_frame = C.addFile("./scenario/door_with_walls_mirror.g")
-    door_pose = np.array(door_frame.getPose(), dtype=float)
-    door_pose[:3] = door_translation
     door_frame.setPose(door_pose)
     return door_frame
 
@@ -91,12 +92,17 @@ def loadConfig():
     C.addFile(ry.raiPath('scenarios/panda_ranger.g')).setPosition([0., 0., 0])
 
     # get marker
-    # marker_translation, _ = acquire_marker_pose()
-    # door_translation = marker_translation + MARKER_TO_DOOR_BASE_OFFSET
-    door_translation = [-1, 0., 0]
+    marker_translation, _ = acquire_marker_pose()
+    door_translation = marker_translation + MARKER_TO_DOOR_BASE_OFFSET
+    door_pose_vec = np.array([door_translation[0], door_translation[1], door_translation[2], 1., 0., 0., 0.], dtype=float)
+    T_door_to_marker = np.eye(4)
+    T_door_to_marker[:3,3] = door_translation.reshape(3,1)
+    T = T_door_to_marker * BASE_TO_BASECAMERA
+
+    # door_translation = [-1, 0., 0]
 
     # door
-    door_base_frame = place_door_scene(C, door_translation)
+    door_base_frame = place_door_scene(C, door_pose_vec)
 
     global door_pose_world, handle_pose_world
     door_pose_world = np.array(door_base_frame.getPose(), dtype=float)
@@ -126,14 +132,16 @@ def pullDoor(C: ry.Config, bot: ry.BotOp):
     # setup the KOMO problem
     helper = ManpulaitonHelper2()
     helper.setup_sequence(C, 2, 1e-2, 1e-1, True, False, False)
-    helper.handle_grasp(1., gripper, 'handle_body2', 'door_joint', 'l_palm', 0.1)
+    helper.handle_grasp(1., gripper, 'handle_body2', 'door_joint', 'l_palm', 0.02)
 
     helper.freeze_joint([0, 1.], ['handle_joint'])
     helper.freeze_joint([0, 1.], ['door_joint'])
     helper.freeze_joint([0, 2], ['ranger_rot'])
 
+    ry.Quaternion().set
+
     # pull (or TODO: push) the door
-    helper.komo.addObjective([2], ry.FS.qItself, ['door_joint'], ry.OT.eq, [1e1], [1.5])
+    helper.komo.addObjective([2], ry.FS.qItself, ['door_joint'], ry.OT.eq, [1e1], [0.5])
     helper.komo.addFrameDof('grasp_handle', gripper, ry.JT.free, True, 'handle_body2', None)
     helper.komo.addObjective([1, 2], ry.FS.poseDiff, ['handle_body2', 'grasp_handle'], ry.OT.eq, [1e1], [0.])
 
@@ -158,6 +166,7 @@ def pullDoor(C: ry.Config, bot: ry.BotOp):
         print(phase1.komo.report())
         return None
 
+
     phase2 = helper.sub_motion(1)
     phase2.freeze_relativePose([0., 1.], gripper, 'handle_body2')
     phase2.solve()
@@ -166,7 +175,9 @@ def pullDoor(C: ry.Config, bot: ry.BotOp):
         phase2.komo.view(True, 'phase2 not feasible')
         return
 
-    execute_paths(bot, C, phase1.path, phase2.path)
+    execute_paths(bot, C, phase1.path)
+    bot.gripperMove(ry._left, width=.0, speed=.1)
+    execute_paths(bot, C, phase2.path)
 
 
 def go_through(C: ry.Config, bot: ry.BotOp):

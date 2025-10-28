@@ -28,7 +28,7 @@ handle_joint(handle_joint_origin): {
 handle_body1(handle_joint): {
     Q: "t(0.2 0 0 ) d(90 0 1 0)", 
     shape: capsule, 
-    size:[.2 .01], 
+    size:[.07 .01], 
     color: [1 1 1],
     contact: -1,
     mass: .01,
@@ -37,7 +37,7 @@ handle_body1(handle_joint): {
 handle_body2(handle_joint){
     Q: "t(.295 -.15 0) d(90 1 0 0)",
     shape: capsule,
-    size:[.3 .02],
+    size:[.1 .02],
     color:[1 1 1],
     contact:-1,
     mass=.01
