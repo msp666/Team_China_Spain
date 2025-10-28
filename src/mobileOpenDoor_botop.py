@@ -9,11 +9,14 @@ tau = 0.01
 
 # Marker offset assumptions (mirror door, marker near panel center).
 # All vectors are expressed in door coordinates while the door is closed.
-MARKER_TO_DOOR_BASE_OFFSET = np.array([0.0, -0.9125, 1.045])
-BASE_TO_BASECAMERA = np.array([[ 0.9989,  0.0464, -0.0112,  0.1149],
-                                [ 0.003 ,  0.1737 , 0.9848, -0.0891],
-                                [ 0.0477, -0.9837,  0.1734,  0.7865],
-                                [ 0.  ,    0.   ,   0.    ,  1.    ]])
+T_DOOR_MARKER = np.eye(4)
+T_DOOR_MARKER[:3, 3] = np.array([0.0, -0.9125, 1.045])
+
+
+BASE_TO_BASECAMERA = np.eye(4)
+BASE_TO_BASECAMERA[:3,:3] = np.array([[0, 0, -1], [1, 0, 0], [0,-1,0]])
+BASE_TO_BASECAMERA[:3, 3] = np.array([-.35, .1, 0.4])
+
 
 # MARKER_TO_HANDLE_OFFSET = np.array([0.0, 0.085, 17.25])
 
@@ -67,7 +70,7 @@ def acquire_marker_pose():
     return np.asarray(t, dtype=float).reshape(3,), np.asarray(r, dtype=float).reshape(3,)
 
 
-def place_door_scene(C: ry.Config, door_pose: np.ndarray) -> ry.Frame:
+def place_door_scene(C: ry.Config, door_pose: np.ndarray=np.array([-1, 0, 0, 1, 0, 0, 0])) -> ry.Frame:
     """Load the door scenario and set the base frame pose explicitly."""
     door_frame = C.addFile("./scenario/door_with_walls_mirror.g")
     door_frame.setPose(door_pose)
@@ -90,27 +93,38 @@ def loadConfig():
 
     # mobile base position
     C.addFile(ry.raiPath('scenarios/panda_ranger.g')).setPosition([0., 0., 0])
+    q = ry.Quaternion().setMatrix(BASE_TO_BASECAMERA[:3,:3]).asArr()
+    pose = np.concat([BASE_TO_BASECAMERA[:3,3], q])
+    C.addFrame('baseCamera', 'ranger_rot').setShape(ry.ST.marker, [0.2]).setRelativePose(pose)
 
-    # get marker
-    marker_translation, _ = acquire_marker_pose()
-    door_translation = marker_translation + MARKER_TO_DOOR_BASE_OFFSET
-    door_pose_vec = np.array([door_translation[0], door_translation[1], door_translation[2], 1., 0., 0., 0.], dtype=float)
-    T_door_to_marker = np.eye(4)
-    T_door_to_marker[:3,3] = door_translation.reshape(3,1)
-    T = T_door_to_marker * BASE_TO_BASECAMERA
-
-    # door_translation = [-1, 0., 0]
+    C2 = ry.Config()
+    C2.addConfigurationCopy(C)
 
     # door
-    door_base_frame = place_door_scene(C, door_pose_vec)
-
-    global door_pose_world, handle_pose_world
-    door_pose_world = np.array(door_base_frame.getPose(), dtype=float)
-
-    print("Door pose (world):", door_pose_world)
-    print("Handle pose (world):", handle_pose_world)
-
+    door_base_frame = place_door_scene(C)
+    pose_camera_marker, _ = C.eval(ry.FS.poseRel, frames=['aruco1', 'baseCamera'])
+    door_marker, _ = C.eval(ry.FS.poseRel, frames=['aruco1', 'door_joint'])
+    T_DOOR_MARKER[:3, :3] = ry.Quaternion().set(door_marker[3:]).getMatrix()
     C.view(True)
+
+    # get marker
+    # marker_translation, _ = acquire_marker_pose()
+    # TODO: change this part to the marker pose given by camera
+    T_camera_marker = np.eye(4)
+    T_camera_marker[:3, :3] = ry.Quaternion().set(pose_camera_marker[3:]).getMatrix()
+    T_camera_marker[:3, 3] = pose_camera_marker[:3] 
+    T_camera_marker[2,3] += 1.
+    T = BASE_TO_BASECAMERA @ T_camera_marker @ np.linalg.inv(T_DOOR_MARKER)
+
+    door_pose_vec = np.zeros(7)
+    R = T[:3, :3]
+    quat = ry.Quaternion().setMatrix(R).asArr()
+    door_pose_vec[:3] = T[:3, 3]
+    door_pose_vec[3:] = quat
+    door_base_frame = place_door_scene(C2, door_pose=door_pose_vec)
+
+
+    C2.view(True, 'debug')
 
     return C
 
@@ -138,7 +152,6 @@ def pullDoor(C: ry.Config, bot: ry.BotOp):
     helper.freeze_joint([0, 1.], ['door_joint'])
     helper.freeze_joint([0, 2], ['ranger_rot'])
 
-    ry.Quaternion().set
 
     # pull (or TODO: push) the door
     helper.komo.addObjective([2], ry.FS.qItself, ['door_joint'], ry.OT.eq, [1e1], [0.5])
@@ -178,6 +191,7 @@ def pullDoor(C: ry.Config, bot: ry.BotOp):
     execute_paths(bot, C, phase1.path)
     bot.gripperMove(ry._left, width=.0, speed=.1)
     execute_paths(bot, C, phase2.path)
+
 
 
 def go_through(C: ry.Config, bot: ry.BotOp):
