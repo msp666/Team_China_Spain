@@ -14,8 +14,21 @@ class ManpulaitonHelper2(ry.KOMO_ManipulationHelper):
     def __init__(self):
         super().__init__()
 
-    def grasp_cylinder(self, time, gripper, obj, palm, margin=0.02):
-        pass
+    def handle_grasp(self, time, gripper, obj, joint, palm, margin=0.02):
+        size = self.komo.getConfig().getFrame(obj).getSize()[:2]
+
+        # position: center along axis, stay within z-range
+        self.komo.addObjective([time], ry.FS.positionRel, [gripper, obj], ry.OT.eq, np.array([[1, 0, 0],[0, 1, 0]])*1e1)
+        self.komo.addObjective([time], ry.FS.positionRel, [gripper, obj], ry.OT.ineq, np.array([[0, 0, 1]])*1e1, np.array([0.,0.,.5*size[0]-margin]))
+        self.komo.addObjective([time], ry.FS.positionRel, [gripper, obj], ry.OT.ineq, np.array([[0, 0, 1]])*(-1e1), np.array([0.,0.,-.5*size[0]+margin]))
+
+        # orientation: grasp axis orthoginal to target plane X-specific
+        self.komo.addObjective([time-.2, time], ry.FS.scalarProductXZ, [gripper, obj], ry.OT.eq, [1e0])
+        # self.komo.addObjective([time-.2, time], ry.FS.scalarProductXZ, [gripper, joint], ry.OT.eq, scale=[1e0], target=-0.9)
+        self.komo.addObjective([time-.2, time], ry.FS.scalarProductXZ, [gripper, joint], ry.OT.ineq, scale=[1e0], target=5.)
+
+        # no collision with palm
+        self.komo.addObjective([time-.3,time], ry.FS.distance, [palm, obj], ry.OT.ineq, [1e1], [-.001])
 
 
 def loadConfig():
@@ -45,9 +58,11 @@ def pullDoor(C: ry.Config):
     dofID = C.getJointIDs()
 
     '''setup the  KOMO problem'''
-    M = ry.KOMO_ManipulationHelper()
+    # M = ry.KOMO_ManipulationHelper()
+    M = ManpulaitonHelper2()
     M.setup_sequence(C, 2, 1e-2, 1e-1, True, False, False)
-    M.grasp_cylinder(1., gripper, 'handle_body2', 'l_palm', 0.1)
+    # M.grasp_cylinder(1., gripper, 'handle_body2', 'l_palm', 0.1)
+    M.handle_grasp(1., gripper, 'handle_body2', 'door_joint', 'l_palm', 0.1)
 
     # M.komo.addObjective([1], ry.FS.position, ['ranger_base_link'], ry.OT.eq, [1e1, 1e1, 0], [-3., 0., 0.])
     M.freeze_joint([0, 1.], ['handle_joint'])
@@ -55,7 +70,7 @@ def pullDoor(C: ry.Config):
     M.freeze_joint([0,2], ['ranger_rot'])
 
     # pull (or TODO: push) the door
-    M.komo.addObjective([2], ry.FS.qItself, ['door_joint'], ry.OT.eq, [1e1], [-0.5])
+    M.komo.addObjective([2], ry.FS.qItself, ['door_joint'], ry.OT.eq, [1e1], [-1.5])
     # M.freeze_relativePose([1.3], gripper, 'handle_body2')
     # M.komo.addObjective([1,3], ry.FS.positionRel, ['handle_body2', gripper], ry.OT.eq, [1e1], [0.])
     M.komo.addFrameDof('grasp_handle', gripper, ry.JT.free, True, 'handle_body2', None)

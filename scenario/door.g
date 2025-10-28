@@ -43,3 +43,8 @@ handle_body2(handle_joint){
     contact:-1,
     mass=.01
 }
+
+handle_marker(handle_body2){
+    shape: marker
+    size: [0.1]
+}

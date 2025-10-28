@@ -9,14 +9,6 @@ tau = 0.01
 ROBOT_FRAME_INDEX = 0
 ROBOT_JOINT_INDEX = 0
 
-class ManpulaitonHelper2(ry.KOMO_ManipulationHelper):
-
-    def __init__(self):
-        super().__init__()
-
-    def grasp_cylinder(self, time, gripper, obj, palm, margin=0.02):
-        pass
-
 
 def loadConfig():
     C = ry.Config()
