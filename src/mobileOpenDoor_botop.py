@@ -10,6 +10,7 @@ tau = 0.01
 # Marker offset assumptions (mirror door, marker near panel center).
 # All vectors are expressed in door coordinates while the door is closed.
 MARKER_TO_DOOR_BASE_OFFSET = np.array([0.0, 0.9125, 1.045])
+BASE_CAMERA_TO_BASE = np.array([])
 
 # MARKER_TO_HANDLE_OFFSET = np.array([0.0, 0.085, 17.25])
 
@@ -63,9 +64,9 @@ def acquire_marker_pose():
     return np.asarray(t, dtype=float).reshape(3,), np.asarray(r, dtype=float).reshape(3,)
 
 
-def place_door_scene(config: ry.Config, door_translation: np.ndarray) -> ry.Frame:
+def place_door_scene(C: ry.Config, door_translation: np.ndarray) -> ry.Frame:
     """Load the door scenario and place the base frame at the desired location."""
-    door_frame = config.addFile("./scenario/door_with_walls_mirror.g")
+    door_frame = C.addFile("./scenario/door_with_walls_mirror.g")
     door_pose = np.array(door_frame.getPose(), dtype=float)
     door_pose[:3] = door_translation
     door_frame.setPose(door_pose)
@@ -85,18 +86,20 @@ def loadConfig():
 
     # setup configuration
     C = ry.Config()
+
+    # mobile base position
     C.addFile(ry.raiPath('scenarios/panda_ranger.g')).setPosition([0., 0., 0])
 
-    marker_translation, _ = acquire_marker_pose()
-    door_translation = marker_translation + MARKER_TO_DOOR_BASE_OFFSET
-    handle_translation = marker_translation + MARKER_TO_HANDLE_OFFSET
+    # get marker
+    # marker_translation, _ = acquire_marker_pose()
+    # door_translation = marker_translation + MARKER_TO_DOOR_BASE_OFFSET
+    door_translation = [-1, 0., 0]
 
+    # door
     door_base_frame = place_door_scene(C, door_translation)
-    handle_pose = update_handle_pose(C, handle_translation)
 
     global door_pose_world, handle_pose_world
     door_pose_world = np.array(door_base_frame.getPose(), dtype=float)
-    handle_pose_world = handle_pose.copy()
 
     print("Door pose (world):", door_pose_world)
     print("Handle pose (world):", handle_pose_world)

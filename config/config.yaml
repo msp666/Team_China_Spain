@@ -1,0 +1,62 @@
+# ArUco Board Pose Estimation Configuration
+
+# Camera Settings
+camera:
+  resolution:
+    width: 1280
+    height: 720
+  fps: 30
+  depth_scale: 0.001  # Convert depth from mm to meters
+
+# ArUco Board Configuration
+aruco:
+  dictionary: "DICT_ARUCO_ORIGINAL"  # 7x7 bits, 1000 markers
+  # dictionary: "DICT_6X6_1000"  # 7x7 bits, 1000 markers
+  marker_size: 0.095  # Size of each marker in meters (measure your printed marker!)
+  board_rows: 4  # Number of markers in each row
+  board_cols: 4  # Number of markers in each column
+  spacing: 0.01  # Space between markers in meters
+  
+# Detection Parameters
+detection:
+  adaptive_thresh_win_size: 7
+  adaptive_thresh_constant: 7
+  min_marker_perimeter_rate: 0.03
+  max_marker_perimeter_rate: 4.0
+  polygonal_approx_accuracy_rate: 0.03
+  corner_refinement_method: "CORNER_REFINE_SUBPIX"  # Options: NONE, SUBPIX, CONTOUR
+  corner_refinement_win_size: 5
+  corner_refinement_max_iterations: 30
+  corner_refinement_min_accuracy: 0.01
+  min_markers_to_detect: 2  # Minimum markers for valid detection
+  
+# Calibration
+calibration:
+  calibration_file: "camera_calibration.yaml"
+  board_pattern: [9, 6]  # Checkerboard pattern (cols, rows) for calibration
+  square_size: 0.0155  # Size of checkerboard square in meters (1.55 cm)
+  
+# Hand-Eye Calibration (Transformation from camera to robot base)
+hand_eye:
+  # Identity matrix means camera frame = world frame (will need calibration)
+  transformation_matrix:
+    - [1.0, 0.0, 0.0, 0.0]  # [R00, R01, R02, tx]
+    - [0.0, 1.0, 0.0, 0.0]  # [R10, R11, R12, ty]
+    - [0.0, 0.0, 1.0, 0.0]  # [R20, R21, R22, tz]
+    - [0.0, 0.0, 0.0, 1.0]  # [0,   0,   0,   1]
+  config_type: "eye_to_hand"  # Options: eye_in_hand, eye_to_hand
+
+# GUI Settings
+gui:
+  window_name: "ArUco Pose Estimation"
+  display_fps: true
+  show_pose_info: true
+  axis_length: 0.1  # Length of coordinate axes in meters for visualization
+  
+# Data Recording
+recording:
+  output_dir: "data"
+  save_poses_csv: true
+  save_images: false
+  save_video: false
+
