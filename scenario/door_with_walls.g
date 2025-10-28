@@ -1,7 +1,22 @@
-
 door_base: {multibody: true, shape: marker, size:[.5]}
 door_joint(door_base): {joint: hingeZ, q: 0,shape:marker, size:[.3], limits:[-1.5, 1.5], motorKp=0., motorKd=.5, mass: 5.8, inertia: [0.927285, 0.00114363, -0.00285855, 1.26317, 0.000657603, 0.338493]}
 door_body(door_joint): {Q: "t(0 0.5 1) d(0 1 0 0)", shape:box, size: [.1, 1., 2.], color: [.8 .5 .2], contact=-1, mass=.5}
+
+left_wall(door_base): {
+    Q: "t(0 -0.65 1)",
+    shape: box,
+    size: [.1, 1.2, 2.4],
+    color: [.7 .7 .7],
+    contact: 1
+}
+
+right_wall(door_base): {
+    Q: "t(0 1.65 1)",
+    shape: box,
+    size: [.1, 1.2, 2.4],
+    color: [.7 .7 .7],
+    contact: 1
+}
 
 handle_joint_origin(door_joint):{ Q: [-0.1, 0.9, 0.9, 1, 0, 0, 0]}
 handle_joint(handle_joint_origin): {

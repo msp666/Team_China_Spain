@@ -1,5 +1,9 @@
 import robotic as ry
 import numpy as np
+
+
+import robotic as ry
+import numpy as np
 import time
 from termcolor import cprint
 
@@ -38,19 +42,22 @@ def loadConfig():
     C = ry.Config()
     frame = C.addFile(ry.raiPath('scenarios/panda_ranger.g'))\
             .setPosition([0., 0., 0])
+
     panda_joints = C.getJointNames()
     
     global ROBOT_JOINT_INDEX, q0
     ROBOT_JOINT_INDEX = len(panda_joints)
-    C.addFile("./scenario/door.g")\
-     .setPosition([-2., 0., 0])
+    C.addFile("./scenario/door_with_walls.g")\
+     .setPosition([-1.5, 0., 0])
+    global ALL_JOINTS 
+    ALL_JOINTS = C.getJointNames()
     print(frame.name)
 
     C.view(True)
     
     return C
 
-def pullDoor(C: ry.Config, sim:ry.SimulationEngine):
+def pullDoor(C: ry.Config, bot:ry.BotOp):
     cprint('Pull the door', 'red')
     
     col_pairs = C.getCollidablePairs()
@@ -110,40 +117,35 @@ def pullDoor(C: ry.Config, sim:ry.SimulationEngine):
         M2.komo.view(True, 'phase2 not feasible')
         return
     
-    path1 = M1.path[:, 0:ROBOT_JOINT_INDEX]
-    path2 = M2.path[:, 0:ROBOT_JOINT_INDEX]
+    # path1 = M1.path[:, 0:ROBOT_JOINT_INDEX]
+    # path2 = M2.path[:, 0:ROBOT_JOINT_INDEX]
+    path1 = M1.path
+    path2 = M2.path
 
     joints = C.getJointNames()
-    # different from Cpp where we can select joint in the Config which is a member of sim, here we directly select 
-    # it outside at original Config. We can also write this in Cpp, because sim is constructed with the reference of Config
-    C.selectJoints(joints[0:ROBOT_JOINT_INDEX])
-    sim.resetSplineRef()
-    sim.setSplineRef(path1, [4.])
-    while sim.getTimeToSplineEnd() > 0.:
-        time.sleep(tau)
-        sim.step([], tau, ry.ControlMode.spline)
-        C.view()
 
-    # sim.moveGripper(gripper, 0.0, .5)
-    # while not sim.gripperIsDone(gripper):
-    #     time.sleep(tau)
-    #     sim.step([], tau, ry.ControlMode.spline)
-    #     C.view()
+    # C.selectJoints(joints[0:ROBOT_JOINT_INDEX]) 
 
-    sim.setSplineRef(path2, [3.])
-    while sim.getTimeToSplineEnd() > 0.:
-        time.sleep(tau)
-        sim.step([], tau, ry.ControlMode.spline)
-        C.view()
+    # Simulation
+    for i in range(len(path1)):
+        bot.moveTo(path1[i])
+        bot.wait(C)
+    
+    for i in range(len(path2)):
+        bot.moveTo(path2[i])
+        bot.wait(C)
 
-def go_through(C: ry.Config, sim:ry.Simulation):
+def go_through(C: ry.Config, bot: ry.BotOp):
     cprint('Go through', 'red')
     M = ry.KOMO_ManipulationHelper()
-    
 
+
+
+    
 
 if __name__ == "__main__":
     C = loadConfig()
-    sim = ry.Simulation(C, ry.SimulationEngine.physx, verbose=0)
-    pullDoor(C, sim)
-    go_through(C, sim)
+    bot = ry.BotOp(C, useRealRobot=False)
+    
+    pullDoor(C, bot)
+    

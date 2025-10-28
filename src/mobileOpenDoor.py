@@ -2,7 +2,6 @@ import robotic as ry
 import numpy as np
 import time
 
-import getParameters
 
 gripper = 'l_gripper'
 tau = 0.01
