@@ -2,7 +2,13 @@ door_base: {multibody: true, shape: marker, size:[.5]}
 door_joint(door_base): {Q:"t(-0.05 0 0) d(0 1 0 0)", joint: hingeZ, q: 0, shape: marker, size:[.3], limits:[-1.5, 1.5], motorKp=0., motorKd:.5, mass: 5.8, inertia: [0.927285, 0.00114363, -0.00285855, 1.26317, 0.000657603, 0.338493]}
 door_body(door_joint): {Q: "t(0 -0.49 1.125) d(0 -1 0 0)", shape:box, size: [.1, .98, 2.25], color: [.8 .5 .2], contact:-1, mass:.5}
 
-aruco1(door_base): {Q: [0.05, -0.9125, 0.905, 0.5, 0.5, 0.5, 0.5 ], shape: marker, size: [0.1]}
+aruco1(door_base): {Q: [0.05, -0.9125, 0.885, 0.5, 0.5, 0.5, 0.5 ], shape: marker, size: [0.1]}
+aruco2(door_base): {Q: [0.05, -0.41, 0.875, 0.5, 0.5, 0.5, 0.5], shape: marker, size: [0.1]}
+aruco3(door_base): {Q: [0.05, -0.905, 0.645, 0.5, 0.5, 0.5, 0.5], shape: marker, size: [0.1]}
+
+aruco4(door_base): {Q: [0.04, -1.06, 0.88, 0.5, 0.5, 0.5, 0.5 ], shape: marker, size: [0.1]}
+aruco5(door_base): {Q: [0.04, -1.06, 0.64, 0.5, 0.5, 0.5, 0.5 ], shape: marker, size: [0.1]}
+
 
 left_wall(door_base): {
     Q: "t(0 0.65 1)",
@@ -15,7 +21,7 @@ left_wall(door_base): {
 right_wall(door_base): {
     Q: "t(0 -1.65 1)",
     shape: box,
-    size: [.1, 1.2, 2.4],
+    size: [.08, 1.2, 2.4],
     color: [.7 .7 .7],
     contact: 1
 }

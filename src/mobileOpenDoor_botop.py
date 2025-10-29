@@ -1,12 +1,13 @@
 import numpy as np
 import robotic as ry
 from termcolor import cprint
+from scipy.spatial.transform import Rotation
 
 from MarkerPose import test_from_camera
 
 gripper = 'l_gripper'
+# camera = 'cameraWrist'
 camera = 'cameraWrist'
-# camera = 'cameraBase'
 tau = 0.01
 
 # Marker offset assumptions (mirror door, marker near panel center).
@@ -14,10 +15,37 @@ tau = 0.01
 T_DOOR_MARKER = np.eye(4)
 T_DOOR_MARKER[:3, 3] = np.array([0.05, -0.9125, 0.885])
 
+T_DOOR_MARKER1 = np.eye(4)
+T_DOOR_MARKER1[:3, 3] = np.array([0.05, -0.9125, 0.885])
+T_DOOR_MARKER2 = np.eye(4)
+T_DOOR_MARKER2[:3, 3] = np.array([0.05, -0.41, 0.875])
+T_DOOR_MARKER3 = np.eye(4)
+T_DOOR_MARKER3[:3, 3] = np.array([0.05, -0.905, 0.645])
+T_DOOR_LIST = [T_DOOR_MARKER1, T_DOOR_MARKER2, T_DOOR_MARKER3]
+DOOR_to_MARKER = {
+    0: 429,
+    1: 622,
+    2: 172,
+}
+
+T_WALL_MARKER1 = np.eye(4)
+T_WALL_MARKER1[:3, 3] = np.array([0.04, -1.06, 0.88])
+T_WALL_MARKER2 = np.eye(4)
+T_WALL_MARKER2[:3, 3] = np.array([0.04, -1.06, 0.64])
+T_WALL_LIST = [T_WALL_MARKER1, T_WALL_MARKER2]
+WALL_to_MARKER = {
+    0: 279,
+    1: 735,
+}
 
 BASE_TO_BASECAMERA = np.eye(4)
 BASE_TO_BASECAMERA[:3,:3] = np.array([[0, 0, -1], [1, 0, 0], [0,-1,0]])
 BASE_TO_BASECAMERA[:3, 3] = np.array([-.35, .1, 0.4])
+
+ROBOT_JOINT_COUNT = 0
+
+DOOR_IDS = [429, 622, 172]
+WALL_IDS = [279, 735]
 
 
 # MARKER_TO_HANDLE_OFFSET = np.array([0.0, 0.085, 17.25])
@@ -25,6 +53,29 @@ BASE_TO_BASECAMERA[:3, 3] = np.array([-.35, .1, 0.4])
 # Updated when loadConfig() runs so other modules can read the estimated poses.
 door_pose_world = None
 handle_pose_world = None
+
+def se3_to_matrix(r_dict, t_dict):
+    res = {}
+
+    for k in r_dict.keys():
+        _T = np.eye(4)
+        _T[:3, 3] = t_dict[k]
+        _T[:3, :3] = ry.Quaternion().setExp(r_dict[k]).getMatrix()
+        res[k] = _T
+
+    return res
+
+def matrix_to_se3(Ts:np.array):
+
+    res = []
+    for T in Ts:
+        _r = ry.Quaternion().setMatrix(T[:3, :3]).getLog()
+        _t = T[:3, 3]
+        res.append(_t + _r)
+    return np.ndarray(res)
+    
+
+
 
 
 class ManpulaitonHelper2(ry.KOMO_ManipulationHelper):
@@ -57,8 +108,14 @@ class ManpulaitonHelper2(ry.KOMO_ManipulationHelper):
 
 def acquire_marker_pose():
     """Fetch marker pose from the camera pipeline and return translation, rotation."""
-    t, r = test_from_camera(calibration_file="config/camera_calibration.yaml")
-    return np.asarray(t, dtype=float).reshape(3,), np.asarray(r, dtype=float).reshape(3,)
+    t, r, rotations, translations= test_from_camera(calibration_file="config/camera_calibration.yaml")
+
+    for key in rotations.keys():
+        rotations[key] = np.asarray(rotations[key], dtype=float).reshape(3,)
+    for key in translations.keys():
+        translations[key] = np.asarray(translations[key], dtype=float).reshape(3,)
+
+    return np.asarray(r, dtype=float).reshape(3,), np.asarray(t, dtype=float).reshape(3,), rotations, translations
 
 
 def place_door_scene(C: ry.Config, door_pose: np.ndarray=np.array([-1, 0, 0, 1, 0, 0, 0])) -> ry.Frame:
@@ -79,57 +136,99 @@ def update_handle_pose(config: ry.Config, handle_translation: np.ndarray) -> np.
     return handle_pose
 
 
-def loadConfig(C: ry.Config):
+def pose_estimation():
+    rh, th, r_dict, t_dict = acquire_marker_pose()
+    _phi_h = np.concatenate([th, rh])
 
-    # setup configuration
-    # q = ry.Quaternion().setMatrix(BASE_TO_BASECAMERA[:3,:3]).asArr()
-    # pose = np.concat([BASE_TO_BASECAMERA[:3,3], q])
-    # rotate45 = ry.Quaternion().setExp([np.pi/4, 0,0]).getMatrix()
-    # BASE_TO_BASECAMERA[:3, :3] = BASE_TO_BASECAMERA[:3,:3] @ rotate45
-    # pose[3:] = ry.Quaternion().setMatrix(BASE_TO_BASECAMERA[:3, :3]).asArr()
-    # C.addFrame('baseCamera', 'ranger_rot').setShape(ry.ST.marker, [0.2]).setRelativePose(pose)
+    pose_dict = se3_to_matrix(r_dict, t_dict)
+
+    # door pose
+    T_door_joint_base = []
+    for i, T_door_marker in enumerate(T_DOOR_LIST):
+        marker_id = DOOR_to_MARKER[i]
+        marker_T = pose_dict[marker_id]
+        T_base_marker = BASE_TO_BASECAMERA @ marker_T @ np.linalg.inv(T_door_marker)
+        T_door_joint_base.append(T_base_marker)
+    T_door_joint_base = np.array(T_door_joint_base)
+    phi_door_joint = matrix_to_se3(T_door_joint_base)
+    phi_door_joint = phi_door_joint.mean(axis=0)
+
+    door_pose_vec = np.zeros(7)
+    quat = ry.Quaternion().setMatrix(phi_door_joint[3:]).asArr()
+    door_pose_vec[:3] = phi_door_joint[:3]
+    door_pose_vec[3:] = quat
+
+    # wall pose
+    T_door_base = []
+    for i, T_wall_marker in enumerate(T_WALL_LIST):
+        marker_id = WALL_to_MARKER[i]
+        marker_T = pose_dict[marker_id]
+        T_base_marker = BASE_TO_BASECAMERA @ marker_T @ np.linalg.inv(T_wall_marker)
+        T_door_base.append(T_base_marker)
+    T_door_base = np.array(T_door_base)
+    phi_door_base = matrix_to_se3(T_door_base)
+    phi_door_base = phi_door_base.mean(axis=0)
+
+    base_pose_vec = np.zeros(7)
+    quat = ry.Quaternion().setMatrix(phi_door_base[3:]).asArr()
+    base_pose_vec[:3] = phi_door_base[:3]
+    base_pose_vec[3:] = quat
+
+    q_door = phi_door_base[-1] - phi_door_joint[-1]
+
+    return door_pose_vec, base_pose_vec, q_door
+
+
+
+def loadConfig(C: ry.Config):
     
     C.addFrame('cameraBaseMarker', camera).setShape(ry.ST.marker, [.3])
 
     base_to_camera, _ = C.eval(ry.FS.poseRel, [camera, 'ranger_rot'])
     BASE_TO_BASECAMERA[:3, :3] = ry.Quaternion().set(base_to_camera[3:]).getMatrix()
     BASE_TO_BASECAMERA[:3, 3] = base_to_camera[:3]
-    
-    C2 = ry.Config()
-    C2.addConfigurationCopy(C)
 
-    # door
+    # door default pose
     door_base_frame = place_door_scene(C)
-    
     door_marker, _ = C.eval(ry.FS.poseRel, frames=['aruco1', 'door_joint']) # TODO: calib DOOR TO MARKER
     T_DOOR_MARKER[:3, :3] = ry.Quaternion().set(door_marker[3:]).getMatrix()
     C.view(True)
 
     # get marker
-    marker_translation, marker_rotation = acquire_marker_pose()
-    cprint(f'marker tranlation: {marker_translation},\n marker rotaion: {marker_rotation}', 'red')
+    # marker_translation, marker_rotation = acquire_marker_pose()
+    # cprint(f'marker tranlation: {marker_translation},\n marker rotaion: {marker_rotation}', 'red')
+    # T_camera_marker  = np.eye(4)
+    # T_camera_marker[:3, 3] = marker_translation
+    # T_camera_marker[:3, :3] = ry.Quaternion().setExp(marker_rotation).getMatrix()
+
     # TODO: change this part to the marker pose given by camera
-    # pose_camera_marker, _ = C.eval(ry.FS.poseRel, frames=['aruco1', camera]) # TODO: DEBUG LINE, SHOULD BE REALSENSE ESTIMATION!!!!!!!!!!!!!!!!!!!
-    # T_camera_marker = np.eye(4)
-    # T_camera_marker[:3, :3] = ry.Quaternion().set(pose_camera_marker[3:]).getMatrix()
-    # T_camera_marker[:3, 3] = pose_camera_marker[:3] 
+    _, _, rotations, translations = acquire_marker_pose()
+    marker_id = DOOR_to_MARKER[0]
+    if marker_id not in rotations or marker_id not in translations:
+        raise RuntimeError(f"Marker {marker_id} not detected by RealSense.")
+    pose_camera_marker = np.zeros(7, dtype=float)
+    pose_camera_marker[:3] = translations[marker_id]
+    pose_camera_marker[3:] = ry.Quaternion().setExp(rotations[marker_id]).asArr()
+    T_camera_marker = np.eye(4)
+    T_camera_marker[:3, :3] = ry.Quaternion().set(pose_camera_marker[3:]).getMatrix()
+    T_camera_marker[:3, 3] = pose_camera_marker[:3] 
     # T_camera_marker[0,3] += 1.
 
-    T_camera_marker  = np.eye(4)
-    T_camera_marker[:3, 3] = marker_translation
-    T_camera_marker[:3, :3] = ry.Quaternion().setExp(marker_rotation).getMatrix()
-
     # 
-    T_base_door = BASE_TO_BASECAMERA @ T_camera_marker @ np.linalg.inv(T_DOOR_MARKER)
+    # T_base_door = BASE_TO_BASECAMERA @ T_camera_marker @ np.linalg.inv(T_DOOR_MARKER)
 
-    door_pose_vec = np.zeros(7)
-    R = T_base_door[:3, :3]
-    quat = ry.Quaternion().setMatrix(R).asArr()
-    door_pose_vec[:3] = T_base_door[:3, 3]
-    door_pose_vec[3:] = quat
-    door_base_frame = place_door_scene(C, door_pose=door_pose_vec)
+    # door_pose_vec = np.zeros(7)
+    # R = T_base_door[:3, :3]
+    # quat = ry.Quaternion().setMatrix(R).asArr()
+    # door_pose_vec[:3] = T_base_door[:3, 3]
+    # door_pose_vec[3:] = quat
+    # door_base_frame = place_door_scene(C, door_pose=door_pose_vec)
+
+    door_joint_base, door_base, q_door = pose_estimation()
+    place_door_scene(C, door_pose=door_base)
+    C.getFrame('door_joint').setJointState(q_door)
+
     C.view(True)
-
 
     return C
 
@@ -137,8 +236,6 @@ def loadConfig(C: ry.Config):
 def execute_paths(bot: ry.BotOp, config: ry.Config, *paths):
     """Stream a sequence of joint-space paths to the robot."""
     for path in paths:
-        # path[:, 0] *= -1
-        # path[:, 1] *= -1
         for waypoint in path:
             bot.moveTo(waypoint)
             bot.wait(config)
@@ -198,7 +295,7 @@ def pullDoor(C_plan: ry.Config, C: ry.Config, bot: ry.BotOp, home_q):
         phase2.komo.view(True, 'phase2 not feasible')
         return
 
-    execute_paths(bot, C, phase1.path[:, :-2])
+    execute_paths(bot, C, phase1.path)
     bot.gripperMove(ry._left, width=.0, speed=.1)
     execute_paths(bot, C, phase2.path[:, :-2])
     
@@ -216,11 +313,9 @@ def go_through(C: ry.Config, bot: ry.BotOp):
 
 if __name__ == "__main__":
     C = ry.Config()
-    print(ry.raiPath('scenarios'))
     C.addFile(ry.raiPath('scenarios/panda_ranger.g')).setPosition([0., 0., 0])
-    # exit()
 
-    bot = ry.BotOp(C, useRealRobot=True)
+    bot = ry.BotOp(C, useRealRobot=False)
     bot.sync(C)
     home_q = bot.get_q()
     

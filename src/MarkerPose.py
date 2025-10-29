@@ -5,6 +5,7 @@ calibration_file = "./config/camera_calibration.yaml" # calibration file path
 # tester = ArUcoDetectionTester(dictionary, 0.095, calibration_file, robust_mode=True, enhance_image=True)
 # corners, ids, rejected, display_image = tester.detect_markers(frame)
 
+IDS = [429, 622, 172, 279, 735]
 
 def test_from_camera(camera_id=0, dictionary='DICT_ARUCO_ORIGINAL', marker_size=0.095, 
                      calibration_file=None, width=1280, height=720, use_realsense=True,
@@ -62,6 +63,9 @@ def test_from_camera(camera_id=0, dictionary='DICT_ARUCO_ORIGINAL', marker_size=
             # Detect markers
             corners, ids, rejected, display_image = tester.detect_markers(frame)
 
+            rotations = {}
+            translations = {}
+            rotation429, translation429 = None, None
             if ids is not None and tester.camera_matrix is not None:
                 for corner, idx in zip(corners, ids):
                     rvec, tvec, _ = cv2.aruco.estimatePoseSingleMarkers(
@@ -80,8 +84,13 @@ def test_from_camera(camera_id=0, dictionary='DICT_ARUCO_ORIGINAL', marker_size=
                     print(f"Marker ID {idx[0]}:")
                     print(f"  pos (x,y,z): ({tvec[0]:.3f}, {tvec[1]:.3f}, {tvec[2]:.3f})m")
                     print(f"  dist: {distance:.3f}m")
-                    if idx[0] == 429:
-                        break
+                    if idx[0] in IDS:
+                        rotations[idx[0]] = rvec
+                        translations[idx[0]] = tvec
+                        if idx[0] == 429:
+                            rotation429, translation429 = rvec, tvec
+
+            assert rotation429 is not None
 
             
             # Draw info
@@ -111,6 +120,6 @@ def test_from_camera(camera_id=0, dictionary='DICT_ARUCO_ORIGINAL', marker_size=
     # Final statistics
     tester.print_statistics()
 
-    return tvec, rvec
+    return rotation429, translation429, rotations, translations
 
 
