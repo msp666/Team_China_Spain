@@ -5,6 +5,8 @@ from termcolor import cprint
 from MarkerPose import test_from_camera
 
 gripper = 'l_gripper'
+# camera = 'cameraWrist'
+camera = 'cameraBase'
 tau = 0.01
 
 # Marker offset assumptions (mirror door, marker near panel center).
@@ -55,7 +57,7 @@ class ManpulaitonHelper2(ry.KOMO_ManipulationHelper):
 
 def acquire_marker_pose():
     """Fetch marker pose from the camera pipeline and return translation, rotation."""
-    t, r = test_from_camera()
+    t, r = test_from_camera(calibration_file="config/camera_calibration.yaml")
     return np.asarray(t, dtype=float).reshape(3,), np.asarray(r, dtype=float).reshape(3,)
 
 
@@ -77,13 +79,9 @@ def update_handle_pose(config: ry.Config, handle_translation: np.ndarray) -> np.
     return handle_pose
 
 
-def loadConfig():
+def loadConfig(C: ry.Config):
 
     # setup configuration
-    C = ry.Config()
-
-    # mobile base position
-    C.addFile(ry.raiPath('scenarios/panda_ranger.g')).setPosition([0., 0., 0])
     # q = ry.Quaternion().setMatrix(BASE_TO_BASECAMERA[:3,:3]).asArr()
     # pose = np.concat([BASE_TO_BASECAMERA[:3,3], q])
     # rotate45 = ry.Quaternion().setExp([np.pi/4, 0,0]).getMatrix()
@@ -91,9 +89,9 @@ def loadConfig():
     # pose[3:] = ry.Quaternion().setMatrix(BASE_TO_BASECAMERA[:3, :3]).asArr()
     # C.addFrame('baseCamera', 'ranger_rot').setShape(ry.ST.marker, [0.2]).setRelativePose(pose)
     
-    C.addFrame('cameraBaseMarker', 'cameraBase').setShape(ry.ST.marker, [.3])
+    C.addFrame('cameraBaseMarker', camera).setShape(ry.ST.marker, [.3])
 
-    base_to_camera, _ = C.eval(ry.FS.poseRel, ['cameraBase', 'ranger_rot'])
+    base_to_camera, _ = C.eval(ry.FS.poseRel, [camera, 'ranger_rot'])
     BASE_TO_BASECAMERA[:3, :3] = ry.Quaternion().set(base_to_camera[3:]).getMatrix()
     BASE_TO_BASECAMERA[:3, 3] = base_to_camera[:3]
     
@@ -108,18 +106,18 @@ def loadConfig():
     C.view(True)
 
     # get marker
-    marker_translation, marker_rotation = acquire_marker_pose()
-    cprint(f'marker tranlation: {marker_translation},\n marker rotaion: {marker_rotation}', 'red')
+    # marker_translation, marker_rotation = acquire_marker_pose()
+    # cprint(f'marker tranlation: {marker_translation},\n marker rotaion: {marker_rotation}', 'red')
     # TODO: change this part to the marker pose given by camera
-    # pose_camera_marker, _ = C.eval(ry.FS.poseRel, frames=['aruco1', 'cameraBase']) # TODO: DEBUG LINE, SHOULD BE REALSENSE ESTIMATION!!!!!!!!!!!!!!!!!!!
-    # T_camera_marker = np.eye(4)
-    # T_camera_marker[:3, :3] = ry.Quaternion().set(pose_camera_marker[3:]).getMatrix()
-    # T_camera_marker[:3, 3] = pose_camera_marker[:3] 
-    # T_camera_marker[0,3] += 1.
+    pose_camera_marker, _ = C.eval(ry.FS.poseRel, frames=['aruco1', camera]) # TODO: DEBUG LINE, SHOULD BE REALSENSE ESTIMATION!!!!!!!!!!!!!!!!!!!
+    T_camera_marker = np.eye(4)
+    T_camera_marker[:3, :3] = ry.Quaternion().set(pose_camera_marker[3:]).getMatrix()
+    T_camera_marker[:3, 3] = pose_camera_marker[:3] 
+    T_camera_marker[0,3] += 1.
 
-    T_camera_marker  = np.eye(4)
-    T_camera_marker[:3, 3] = marker_translation
-    T_camera_marker[:3, :3] = ry.Quaternion().setExp(marker_rotation).getMatrix()
+    # T_camera_marker  = np.eye(4)
+    # T_camera_marker[:3, 3] = marker_translation
+    # T_camera_marker[:3, :3] = ry.Quaternion().setExp(marker_rotation).getMatrix()
 
     # 
     T_base_door = BASE_TO_BASECAMERA @ T_camera_marker @ np.linalg.inv(T_DOOR_MARKER)
@@ -130,6 +128,7 @@ def loadConfig():
     door_pose_vec[:3] = T_base_door[:3, 3]
     door_pose_vec[3:] = quat
     door_base_frame = place_door_scene(C, door_pose=door_pose_vec)
+    C.view(True)
 
 
     return C
@@ -143,15 +142,15 @@ def execute_paths(bot: ry.BotOp, config: ry.Config, *paths):
             bot.wait(config)
 
 
-def pullDoor(C: ry.Config, bot: ry.BotOp):
+def pullDoor(C_plan: ry.Config, C: ry.Config, bot: ry.BotOp):
     cprint('Pull the door', 'red')
 
-    col_pairs = C.getCollidablePairs()
+    col_pairs = C_plan.getCollidablePairs()
     print(col_pairs)
 
     # setup the KOMO problem
     helper = ManpulaitonHelper2()
-    helper.setup_sequence(C, 2, 1e-2, 1e-1, True, False, False)
+    helper.setup_sequence(C_plan, 2, 1e-2, 1e-1, True, False, False)
     helper.handle_grasp(1., gripper, 'handle_body2', 'door_joint', 'l_palm', 0.02)
 
     helper.freeze_joint([0, 1.], ['handle_joint'])
@@ -165,7 +164,7 @@ def pullDoor(C: ry.Config, bot: ry.BotOp):
     helper.komo.addObjective([1, 2], ry.FS.poseDiff, ['handle_body2', 'grasp_handle'], ry.OT.eq, [1e1], [0.])
 
     helper.solve(2)
-    helper.komo.set_viewer(C.get_viewer())
+    helper.komo.set_viewer(C_plan.get_viewer())
     helper.komo.view(True)
 
     if not helper.feasible:
@@ -173,7 +172,11 @@ def pullDoor(C: ry.Config, bot: ry.BotOp):
         return None
 
     rrt = helper.sub_rrt(0, col_pairs)
-    rrt.solve()
+    ret = rrt.solve()
+    if not ret.feasible:
+        print("RRT did not find a solution!")
+        return
+    
     path_rrt = rrt.get_resampledPath(50)
 
     phase1 = helper.sub_motion(0, True, 1e-2, 1e-1)
@@ -198,14 +201,28 @@ def pullDoor(C: ry.Config, bot: ry.BotOp):
     execute_paths(bot, C, phase2.path)
 
 
-
 def go_through(C: ry.Config, bot: ry.BotOp):
     cprint('Go through', 'red')
     ry.KOMO_ManipulationHelper()
 
 
 if __name__ == "__main__":
-    C = loadConfig()
-    bot = ry.BotOp(C, useRealRobot=False)
+    C = ry.Config()
+    C.addFile(ry.raiPath('scenarios/panda_ranger.g')).setPosition([0., 0., 0])
 
-    pullDoor(C, bot)
+    bot = ry.BotOp(C, useRealRobot=False)
+    bot.sync(C)
+    
+    C_plan = ry.Config()
+    C_plan.addConfigurationCopy(C)
+
+    C_plan = loadConfig(C_plan)
+
+    # pcl_frame = C.addFrame("pcl_frame", camera)
+    # while True:
+    #     rgb, _, pcl = bot.getImageDepthPcl(camera)
+    #     # bot.sync(C)
+    #     pcl_frame.setPointCloud(pcl, rgb)
+    #     C.view()
+
+    pullDoor(C_plan, C, bot)

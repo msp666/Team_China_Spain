@@ -80,7 +80,7 @@ def test_from_camera(camera_id=0, dictionary='DICT_ARUCO_ORIGINAL', marker_size=
                     print(f"Marker ID {idx[0]}:")
                     print(f"  pos (x,y,z): ({tvec[0]:.3f}, {tvec[1]:.3f}, {tvec[2]:.3f})m")
                     print(f"  dist: {distance:.3f}m")
-                    if idx == "429":
+                    if idx[0] == 429:
                         break
 
             
