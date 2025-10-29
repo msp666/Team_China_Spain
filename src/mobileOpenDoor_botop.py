@@ -144,7 +144,7 @@ def execute_paths(bot: ry.BotOp, config: ry.Config, *paths):
             bot.wait(config)
 
 
-def pullDoor(C_plan: ry.Config, C: ry.Config, bot: ry.BotOp):
+def pullDoor(C_plan: ry.Config, C: ry.Config, bot: ry.BotOp, home_q):
     cprint('Pull the door', 'red')
 
     col_pairs = C_plan.getCollidablePairs()
@@ -190,17 +190,23 @@ def pullDoor(C_plan: ry.Config, C: ry.Config, bot: ry.BotOp):
         print(phase1.komo.report())
         return None
 
-    # phase2 = helper.sub_motion(1)
+    phase2 = helper.sub_motion(1)
     # phase2.freeze_relativePose([0., 1.], gripper, 'handle_body2')
-    # phase2.solve()
-    # if not phase2.feasible:
-    #     print(phase2.ret)
-    #     phase2.komo.view(True, 'phase2 not feasible')
-    #     return
+    phase2.solve()
+    if not phase2.feasible:
+        print(phase2.ret)
+        phase2.komo.view(True, 'phase2 not feasible')
+        return
 
     execute_paths(bot, C, phase1.path[:, :-2])
     bot.gripperMove(ry._left, width=.0, speed=.1)
-    # execute_paths(bot, C, phase2.path[:, :-2])
+    execute_paths(bot, C, phase2.path[:, :-2])
+    
+    bot.gripperMove(ry._left)
+    while not bot.gripperDone(ry._left):
+        bot.sync(C)
+    bot.moveTo(home_q, 0.1)
+    bot.wait(C)
 
 
 def go_through(C: ry.Config, bot: ry.BotOp):
@@ -216,6 +222,7 @@ if __name__ == "__main__":
 
     bot = ry.BotOp(C, useRealRobot=True)
     bot.sync(C)
+    home_q = bot.get_q()
     
     C_plan = ry.Config()
     C_plan.addConfigurationCopy(C)
@@ -229,4 +236,4 @@ if __name__ == "__main__":
     #     pcl_frame.setPointCloud(pcl, rgb)
     #     C.view()
 
-    pullDoor(C_plan, C, bot)
+    pullDoor(C_plan, C, bot, home_q)
