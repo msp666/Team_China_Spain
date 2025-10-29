@@ -75,9 +75,6 @@ def matrix_to_se3(Ts:np.array):
     return np.ndarray(res)
     
 
-
-
-
 class ManpulaitonHelper2(ry.KOMO_ManipulationHelper):
 
     def __init__(self):
@@ -191,8 +188,16 @@ def loadConfig(C: ry.Config):
     # door default pose
     door_base_frame = place_door_scene(C)
     door_marker, _ = C.eval(ry.FS.poseRel, frames=['aruco1', 'door_joint']) # TODO: calib DOOR TO MARKER
+    
     T_DOOR_MARKER[:3, :3] = ry.Quaternion().set(door_marker[3:]).getMatrix()
-    C.view(True)
+    T_DOOR_MARKER1[:3, :3] = T_DOOR_MARKER[:3, :3]
+    T_DOOR_MARKER2[:3, :3] = T_DOOR_MARKER[:3, :3]
+    T_DOOR_MARKER3[:3, :3] = T_DOOR_MARKER[:3, :3]
+    T_DOOR_LIST = [T_DOOR_MARKER1, T_DOOR_MARKER2, T_DOOR_MARKER3]
+    T_WALL_MARKER1[:3, :3] = T_DOOR_MARKER[:3, :3]
+    T_WALL_MARKER2[:3, :3] = T_DOOR_MARKER[:3, :3]
+    T_WALL_LIST = [T_WALL_MARKER1, T_WALL_MARKER2]
+
 
     # get marker
     # marker_translation, marker_rotation = acquire_marker_pose()
