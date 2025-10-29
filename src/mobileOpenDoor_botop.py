@@ -72,7 +72,9 @@ def acquire_marker_pose():
 
 def place_door_scene(C: ry.Config, door_pose: np.ndarray=np.array([-1, 0, 0, 1, 0, 0, 0])) -> ry.Frame:
     """Load the door scenario and set the base frame pose explicitly."""
-    door_frame = C.addFile("./scenario/door_with_walls_mirror.g")
+    door_frame = C.getFrame('door_base')
+    if door_frame is None:
+        door_frame = C.addFile("./scenario/door_with_walls_mirror.g")
     door_frame.setPose(door_pose)
     return door_frame
 
@@ -114,17 +116,18 @@ def loadConfig():
     T_camera_marker[:3, :3] = ry.Quaternion().set(pose_camera_marker[3:]).getMatrix()
     T_camera_marker[:3, 3] = pose_camera_marker[:3] 
     T_camera_marker[2,3] += 1.
-    T = BASE_TO_BASECAMERA @ T_camera_marker @ np.linalg.inv(T_DOOR_MARKER)
+
+    # 
+    T_base_door = BASE_TO_BASECAMERA @ T_camera_marker @ np.linalg.inv(T_DOOR_MARKER)
 
     door_pose_vec = np.zeros(7)
-    R = T[:3, :3]
+    R = T_base_door[:3, :3]
     quat = ry.Quaternion().setMatrix(R).asArr()
-    door_pose_vec[:3] = T[:3, 3]
+    door_pose_vec[:3] = T_base_door[:3, 3]
     door_pose_vec[3:] = quat
-    door_base_frame = place_door_scene(C2, door_pose=door_pose_vec)
+    door_base_frame = place_door_scene(C, door_pose=door_pose_vec)
 
-
-    C2.view(True, 'debug')
+    C.view(True, 'debug')
 
     return C
 
@@ -153,7 +156,7 @@ def pullDoor(C: ry.Config, bot: ry.BotOp):
     helper.freeze_joint([0, 2], ['ranger_rot'])
 
 
-    # pull (or TODO: push) the door
+    # pull the door
     helper.komo.addObjective([2], ry.FS.qItself, ['door_joint'], ry.OT.eq, [1e1], [0.5])
     helper.komo.addFrameDof('grasp_handle', gripper, ry.JT.free, True, 'handle_body2', None)
     helper.komo.addObjective([1, 2], ry.FS.poseDiff, ['handle_body2', 'grasp_handle'], ry.OT.eq, [1e1], [0.])
