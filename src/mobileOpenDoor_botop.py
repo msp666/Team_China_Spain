@@ -5,8 +5,8 @@ from termcolor import cprint
 from MarkerPose import test_from_camera
 
 gripper = 'l_gripper'
-# camera = 'cameraWrist'
-camera = 'cameraBase'
+camera = 'cameraWrist'
+# camera = 'cameraBase'
 tau = 0.01
 
 # Marker offset assumptions (mirror door, marker near panel center).
@@ -106,18 +106,18 @@ def loadConfig(C: ry.Config):
     C.view(True)
 
     # get marker
-    # marker_translation, marker_rotation = acquire_marker_pose()
-    # cprint(f'marker tranlation: {marker_translation},\n marker rotaion: {marker_rotation}', 'red')
+    marker_translation, marker_rotation = acquire_marker_pose()
+    cprint(f'marker tranlation: {marker_translation},\n marker rotaion: {marker_rotation}', 'red')
     # TODO: change this part to the marker pose given by camera
-    pose_camera_marker, _ = C.eval(ry.FS.poseRel, frames=['aruco1', camera]) # TODO: DEBUG LINE, SHOULD BE REALSENSE ESTIMATION!!!!!!!!!!!!!!!!!!!
-    T_camera_marker = np.eye(4)
-    T_camera_marker[:3, :3] = ry.Quaternion().set(pose_camera_marker[3:]).getMatrix()
-    T_camera_marker[:3, 3] = pose_camera_marker[:3] 
-    T_camera_marker[0,3] += 1.
+    # pose_camera_marker, _ = C.eval(ry.FS.poseRel, frames=['aruco1', camera]) # TODO: DEBUG LINE, SHOULD BE REALSENSE ESTIMATION!!!!!!!!!!!!!!!!!!!
+    # T_camera_marker = np.eye(4)
+    # T_camera_marker[:3, :3] = ry.Quaternion().set(pose_camera_marker[3:]).getMatrix()
+    # T_camera_marker[:3, 3] = pose_camera_marker[:3] 
+    # T_camera_marker[0,3] += 1.
 
-    # T_camera_marker  = np.eye(4)
-    # T_camera_marker[:3, 3] = marker_translation
-    # T_camera_marker[:3, :3] = ry.Quaternion().setExp(marker_rotation).getMatrix()
+    T_camera_marker  = np.eye(4)
+    T_camera_marker[:3, 3] = marker_translation
+    T_camera_marker[:3, :3] = ry.Quaternion().setExp(marker_rotation).getMatrix()
 
     # 
     T_base_door = BASE_TO_BASECAMERA @ T_camera_marker @ np.linalg.inv(T_DOOR_MARKER)
@@ -137,6 +137,8 @@ def loadConfig(C: ry.Config):
 def execute_paths(bot: ry.BotOp, config: ry.Config, *paths):
     """Stream a sequence of joint-space paths to the robot."""
     for path in paths:
+        # path[:, 0] *= -1
+        # path[:, 1] *= -1
         for waypoint in path:
             bot.moveTo(waypoint)
             bot.wait(config)
@@ -188,17 +190,17 @@ def pullDoor(C_plan: ry.Config, C: ry.Config, bot: ry.BotOp):
         print(phase1.komo.report())
         return None
 
-    phase2 = helper.sub_motion(1)
-    phase2.freeze_relativePose([0., 1.], gripper, 'handle_body2')
-    phase2.solve()
-    if not phase2.feasible:
-        print(phase2.ret)
-        phase2.komo.view(True, 'phase2 not feasible')
-        return
+    # phase2 = helper.sub_motion(1)
+    # phase2.freeze_relativePose([0., 1.], gripper, 'handle_body2')
+    # phase2.solve()
+    # if not phase2.feasible:
+    #     print(phase2.ret)
+    #     phase2.komo.view(True, 'phase2 not feasible')
+    #     return
 
-    execute_paths(bot, C, phase1.path)
+    execute_paths(bot, C, phase1.path[:, :-2])
     bot.gripperMove(ry._left, width=.0, speed=.1)
-    execute_paths(bot, C, phase2.path)
+    # execute_paths(bot, C, phase2.path[:, :-2])
 
 
 def go_through(C: ry.Config, bot: ry.BotOp):
@@ -208,9 +210,11 @@ def go_through(C: ry.Config, bot: ry.BotOp):
 
 if __name__ == "__main__":
     C = ry.Config()
+    print(ry.raiPath('scenarios'))
     C.addFile(ry.raiPath('scenarios/panda_ranger.g')).setPosition([0., 0., 0])
+    # exit()
 
-    bot = ry.BotOp(C, useRealRobot=False)
+    bot = ry.BotOp(C, useRealRobot=True)
     bot.sync(C)
     
     C_plan = ry.Config()
