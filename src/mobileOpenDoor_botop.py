@@ -10,7 +10,7 @@ tau = 0.01
 # Marker offset assumptions (mirror door, marker near panel center).
 # All vectors are expressed in door coordinates while the door is closed.
 T_DOOR_MARKER = np.eye(4)
-T_DOOR_MARKER[:3, 3] = np.array([0.0, -0.9125, 1.045])
+T_DOOR_MARKER[:3, 3] = np.array([0.05, -0.9125, 0.885])
 
 
 BASE_TO_BASECAMERA = np.eye(4)
@@ -37,28 +37,17 @@ class ManpulaitonHelper2(ry.KOMO_ManipulationHelper):
 
         # position: center along axis, stay within z-range
         xy_alignment = np.array([[1, 0, 0], [0, 1, 0]]) * 1e1
+        xz_alignment = np.array([[1, 0, 0], [0, 0, 1]]) * 1e1
         z_axis = np.array([[0, 0, 1]]) * 1e1
-        self.komo.addObjective([time], ry.FS.positionRel, [gripper, obj], ry.OT.eq, xy_alignment)
-        self.komo.addObjective(
-            [time],
-            ry.FS.positionRel,
-            [gripper, obj],
-            ry.OT.ineq,
-            z_axis,
-            np.array([0., 0., .5 * size[0] - margin]),
-        )
-        self.komo.addObjective(
-            [time],
-            ry.FS.positionRel,
-            [gripper, obj],
-            ry.OT.ineq,
-            -z_axis,
-            np.array([0., 0., -.5 * size[0] + margin]),
-        )
+        # self.komo.addObjective([time], ry.FS.positionRel, [gripper, obj], ry.OT.eq, xy_alignment)
+        self.komo.addObjective([time], ry.FS.positionRel, [obj, gripper], ry.OT.eq, np.array([1,0,0]))
+        self.komo.addObjective([time], ry.FS.positionRel, [obj, gripper], ry.OT.eq, z_axis, [0.01])
+        self.komo.addObjective([time], ry.FS.positionRel, [gripper, obj], ry.OT.ineq, z_axis, np.array([0., 0., .5 * size[0] - margin]))
+        self.komo.addObjective([time], ry.FS.positionRel, [gripper, obj], ry.OT.ineq, -z_axis, np.array([0., 0., -.5 * size[0] + margin]))
 
         # orientation: keep the gripper orthogonal to the handle plane
         self.komo.addObjective([time - .2, time], ry.FS.scalarProductXZ, [gripper, obj], ry.OT.eq, [1e0])
-        self.komo.addObjective([time - .2, time], ry.FS.scalarProductXZ, [gripper, joint], ry.OT.ineq, scale=[1e0], target=[0.7])
+        # self.komo.addObjective([time - .2, time], ry.FS.scalarProductXZ, [gripper, joint], ry.OT.ineq, scale=[1e0], target=[0.7])
 
         # no collision with palm
         self.komo.addObjective([time - .3, time], ry.FS.distance, [palm, obj], ry.OT.ineq, [1e1], [-.001])
@@ -95,27 +84,42 @@ def loadConfig():
 
     # mobile base position
     C.addFile(ry.raiPath('scenarios/panda_ranger.g')).setPosition([0., 0., 0])
-    q = ry.Quaternion().setMatrix(BASE_TO_BASECAMERA[:3,:3]).asArr()
-    pose = np.concat([BASE_TO_BASECAMERA[:3,3], q])
-    C.addFrame('baseCamera', 'ranger_rot').setShape(ry.ST.marker, [0.2]).setRelativePose(pose)
+    # q = ry.Quaternion().setMatrix(BASE_TO_BASECAMERA[:3,:3]).asArr()
+    # pose = np.concat([BASE_TO_BASECAMERA[:3,3], q])
+    # rotate45 = ry.Quaternion().setExp([np.pi/4, 0,0]).getMatrix()
+    # BASE_TO_BASECAMERA[:3, :3] = BASE_TO_BASECAMERA[:3,:3] @ rotate45
+    # pose[3:] = ry.Quaternion().setMatrix(BASE_TO_BASECAMERA[:3, :3]).asArr()
+    # C.addFrame('baseCamera', 'ranger_rot').setShape(ry.ST.marker, [0.2]).setRelativePose(pose)
+    
+    C.addFrame('cameraBaseMarker', 'cameraBase').setShape(ry.ST.marker, [.3])
 
+    base_to_camera, _ = C.eval(ry.FS.poseRel, ['cameraBase', 'ranger_rot'])
+    BASE_TO_BASECAMERA[:3, :3] = ry.Quaternion().set(base_to_camera[3:]).getMatrix()
+    BASE_TO_BASECAMERA[:3, 3] = base_to_camera[:3]
+    
     C2 = ry.Config()
     C2.addConfigurationCopy(C)
 
     # door
     door_base_frame = place_door_scene(C)
-    pose_camera_marker, _ = C.eval(ry.FS.poseRel, frames=['aruco1', 'baseCamera'])
-    door_marker, _ = C.eval(ry.FS.poseRel, frames=['aruco1', 'door_joint'])
+    
+    door_marker, _ = C.eval(ry.FS.poseRel, frames=['aruco1', 'door_joint']) # TODO: calib DOOR TO MARKER
     T_DOOR_MARKER[:3, :3] = ry.Quaternion().set(door_marker[3:]).getMatrix()
     C.view(True)
 
     # get marker
-    # marker_translation, _ = acquire_marker_pose()
+    marker_translation, marker_rotation = acquire_marker_pose()
+    cprint(f'marker tranlation: {marker_translation},\n marker rotaion: {marker_rotation}', 'red')
     # TODO: change this part to the marker pose given by camera
-    T_camera_marker = np.eye(4)
-    T_camera_marker[:3, :3] = ry.Quaternion().set(pose_camera_marker[3:]).getMatrix()
-    T_camera_marker[:3, 3] = pose_camera_marker[:3] 
-    T_camera_marker[2,3] += 1.
+    # pose_camera_marker, _ = C.eval(ry.FS.poseRel, frames=['aruco1', 'cameraBase']) # TODO: DEBUG LINE, SHOULD BE REALSENSE ESTIMATION!!!!!!!!!!!!!!!!!!!
+    # T_camera_marker = np.eye(4)
+    # T_camera_marker[:3, :3] = ry.Quaternion().set(pose_camera_marker[3:]).getMatrix()
+    # T_camera_marker[:3, 3] = pose_camera_marker[:3] 
+    # T_camera_marker[0,3] += 1.
+
+    T_camera_marker  = np.eye(4)
+    T_camera_marker[:3, 3] = marker_translation
+    T_camera_marker[:3, :3] = ry.Quaternion().setExp(marker_rotation).getMatrix()
 
     # 
     T_base_door = BASE_TO_BASECAMERA @ T_camera_marker @ np.linalg.inv(T_DOOR_MARKER)
@@ -127,7 +131,6 @@ def loadConfig():
     door_pose_vec[3:] = quat
     door_base_frame = place_door_scene(C, door_pose=door_pose_vec)
 
-    C.view(True, 'debug')
 
     return C
 
@@ -181,7 +184,6 @@ def pullDoor(C: ry.Config, bot: ry.BotOp):
     if not phase1.feasible:
         print(phase1.komo.report())
         return None
-
 
     phase2 = helper.sub_motion(1)
     phase2.freeze_relativePose([0., 1.], gripper, 'handle_body2')
